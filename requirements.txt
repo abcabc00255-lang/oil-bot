@@ -2,3 +2,4 @@ feedparser
 deep-translator
 requests
 Pillow
+Flask
