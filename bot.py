@@ -1,62 +1,63 @@
 import time, feedparser, requests
 from deep_translator import GoogleTranslator
+from PIL import Image, ImageDraw, ImageFont
+import textwrap
 
-# --- FINAL CONFIG - Sab fill hai ---
-TELEGRAM_BOT_TOKEN = "8703081151:AAGaIQu3yX8FAdDrLA6aPV_CUPyOiYRhIwg"
-TELEGRAM_CHAT_ID = "8814220350"
-FB_SYSTEM_TOKEN = "EAAXUYhX94UEBS2fOVXSkzqSIhjWYJZCoDhvp6ZB6VZA3JNhQqSR2x8oimwyZCmcr5FvmepTr0sK6A4tWZAzhe7nwWNyQL3wK1gZCjcBEWUZCX5dyxcQR5gGvUxbp7XvE30CgPQdKboTV3fSt6iO5tE9BscUSVeYbOYZAzhrL7lVdBwUUYB7ooffZAQKV8ejHGxTuQZDZD"
+# --- FINAL CONFIG ---
 TWITTER_USER = "MarioNawfal"
 RSS_URL = f"https://rsshub.app/twitter/user/{TWITTER_USER}"
-
-print("Bot Starting...")
-
-def get_page_token():
-    try:
-        r = requests.get(f"https://graph.facebook.com/v19.0/me/accounts?access_token={FB_SYSTEM_TOKEN}").json()
-        print(f"Facebook Response: {r}")
-        page = r['data'][0]
-        return page['id'], page['access_token']
-    except Exception as e:
-        print(f"Page nahi mila, saare pages check karo: {e}")
-        return None, None
-
-PAGE_ID, PAGE_TOKEN = get_page_token()
-
-if PAGE_ID:
-    print(f"Page Found: {PAGE_ID} - Bot Ready!")
-else:
-    print("Page ID nahi mila, aapka token pages permission nahi de raha. Pages_show_list add karna hoga.")
+TELEGRAM_TOKEN = "8703081151:AAGaIQu3yX8FAdDrLA6aPV_CUPyOiYRhIwg"
+TELEGRAM_CHAT_ID = "8814220350"
 
 translator = GoogleTranslator(source='en', target='ur')
-last_tweet_id = ""
 
+def get_latest_tweet():
+    feed = feedparser.parse(RSS_URL)
+    if not feed.entries:
+        return None, None, None
+    e = feed.entries[0]
+    return e.title, e.link, e.id
+
+def translate(text):
+    return translator.translate(text)
+
+def make_thumbnail(urdu_hook, output="/tmp/thumbnail.jpg"):
+    img = Image.new('RGB', (1080, 1080), color=(10, 15, 30))
+    draw = ImageDraw.Draw(img)
+    try:
+        font_big = ImageFont.truetype("arial.ttf", 80)
+        font_urdu = ImageFont.truetype("arial.ttf", 60)
+    except:
+        font_big = ImageFont.load_default()
+        font_urdu = font_big
+    draw.rectangle([(0,0),(1080, 160)], fill=(180, 20, 20))
+    draw.text((40, 40), "BREAKING NEWS", fill="white", font=font_big)
+    wrapped = textwrap.wrap(urdu_hook, width=22)
+    y = 450
+    for line in wrapped:
+        draw.text((50, y), line, fill="white", font=font_urdu)
+        y += 80
+    draw.text((50, y+20), "تازہ ترین", fill=(255, 220, 0), font=font_urdu)
+    img.save(output)
+    return output
+
+def send_to_telegram(photo_path, caption):
+    url_photo = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    with open(photo_path, 'rb') as f:
+        r = requests.post(url_photo, data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption}, files={"photo": f})
+        print(r.text)
+
+last_id = ""
 while True:
     try:
-        feed = feedparser.parse(RSS_URL)
-        if feed.entries:
-            latest = feed.entries[0]
-            if latest.id != last_tweet_id and last_tweet_id != "":
-                original_text = latest.title
-                print(f"New Tweet Found: {original_text}")
-
-                # Translate
-                urdu_text = translator.translate(original_text)
-
-                # Aapka Format
-                final_format = f"🚨 بریکنگ نیوز 🚨\n\n{urdu_text}\n\nاصل خبر: {original_text}\n\nSource: @{TWITTER_USER}"
-
-                # 1. Telegram par
-                requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", params={"chat_id": TELEGRAM_CHAT_ID, "text": final_format})
-                
-                # 2. Facebook par
-                if PAGE_ID:
-                    requests.post(f"https://graph.facebook.com/v19.0/{PAGE_ID}/feed", data={"message": final_format, "access_token": PAGE_TOKEN})
-                
-                print("Posted Successfully!")
-            
-            last_tweet_id = latest.id
-
+        eng, link, tweet_id = get_latest_tweet()
+        if eng and tweet_id != last_id:
+            last_id = tweet_id
+            urdu = translate(eng)
+            caption = f"🚨🇸🇦 {urdu}\n\nSource: @{TWITTER_USER}\n{link}\n\n#Breaking"
+            thumb = make_thumbnail(urdu[:80])
+            send_to_telegram(thumb, caption)
+            print("✅ Sent to Telegram!")
     except Exception as e:
         print(f"Error: {e}")
-
-    time.sleep(300) # 5 minute
+    time.sleep(300)
