@@ -1,25 +1,29 @@
-import time, feedparser, requests
+import time, feedparser, requests, threading
 from deep_translator import GoogleTranslator
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
+from flask import Flask
 
-# --- FINAL CONFIG ---
+# --- Keep Render Alive ---
+app = Flask(__name__)
+@app.route('/')
+def home(): return "Bot is Running!"
+def run_flask():
+    app.run(host='0.0.0.0', port=10000)
+threading.Thread(target=run_flask).start()
+
+# --- BOT CONFIG ---
 TWITTER_USER = "MarioNawfal"
 RSS_URL = f"https://rsshub.app/twitter/user/{TWITTER_USER}"
 TELEGRAM_TOKEN = "8703081151:AAGaIQu3yX8FAdDrLA6aPV_CUPyOiYRhIwg"
 TELEGRAM_CHAT_ID = "8814220350"
-
 translator = GoogleTranslator(source='en', target='ur')
 
 def get_latest_tweet():
     feed = feedparser.parse(RSS_URL)
-    if not feed.entries:
-        return None, None, None
+    if not feed.entries: return None, None, None
     e = feed.entries[0]
     return e.title, e.link, e.id
-
-def translate(text):
-    return translator.translate(text)
 
 def make_thumbnail(urdu_hook, output="/tmp/thumbnail.jpg"):
     img = Image.new('RGB', (1080, 1080), color=(10, 15, 30))
@@ -37,15 +41,13 @@ def make_thumbnail(urdu_hook, output="/tmp/thumbnail.jpg"):
     for line in wrapped:
         draw.text((50, y), line, fill="white", font=font_urdu)
         y += 80
-    draw.text((50, y+20), "تازہ ترین", fill=(255, 220, 0), font=font_urdu)
     img.save(output)
     return output
 
 def send_to_telegram(photo_path, caption):
     url_photo = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
     with open(photo_path, 'rb') as f:
-        r = requests.post(url_photo, data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption}, files={"photo": f})
-        print(r.text)
+        requests.post(url_photo, data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption}, files={"photo": f})
 
 last_id = ""
 while True:
@@ -53,8 +55,8 @@ while True:
         eng, link, tweet_id = get_latest_tweet()
         if eng and tweet_id != last_id:
             last_id = tweet_id
-            urdu = translate(eng)
-            caption = f"🚨🇸🇦 {urdu}\n\nSource: @{TWITTER_USER}\n{link}\n\n#Breaking"
+            urdu = translator.translate(eng)
+            caption = f"🚨🇸🇦 {urdu}\n\nSource: @{TWITTER_USER}\n{link}\n#Breaking"
             thumb = make_thumbnail(urdu[:80])
             send_to_telegram(thumb, caption)
             print("✅ Sent to Telegram!")
